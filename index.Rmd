@@ -1,0 +1,148 @@
+---
+title: "Predictive Model of Weight Lifting Dataset "
+author: "Sredan -JR"
+date: " October 21, 2017"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_current$set
+(echo = FALSE)
+```
+##  Background
+To be able to predict the weight lifting routine of twenty cases. The data was gathered from accelerometers. Using devices such as Jawbone Up,and Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These types of devices are part of the quantified self movement a group of enthusiasts who take measurements about themselves regularly to improve their health,to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do but they rarely quantify how well they do it. In this project, the goal is to use data from accelerometers on the belt, forearm, arm and dumbell of six participants. They were asked to perform barbell lifts correctly and incorrectly in five different ways.   
+
+## Loading required libraries and datasets
+```{r}
+setwd("C:/Users/jehuti1/Documents/2017_MachineLearning/projectml")
+library(caret , quietly = TRUE )
+library(randomForest , quietly = TRUE)
+library(psych, quietly = TRUE)
+library(corrplot, quietly = TRUE)
+traindsetq10 <- read.csv("pml-training.csv")
+testdsetq10 <- read.csv("pml-testing.csv")
+```
+### Assessing the predictor columns NA count and removing extraneous columns 
+1. For examples timestamps, usernames and columns/features that are not populated significantly, less than 50%,  with data. 
+2. Removed seven columns that do not contain accelerometer measurements.
+
+```{r, warning= FALSE }
+colcount = ncol(traindsetq10)
+rowcount = nrow(traindsetq10)
+na = integer()
+for (i in 1:colcount) {
+# Add the amount of na's  in the column
+# If it is more than half of the total number of columns remove it  
+
+  fraction = sum(is.na(traindsetq10[,i])) / rowcount
+           if (fraction > 0.5) {
+             na = c(na,i)
+           }
+}
+
+traindsetq10 = traindsetq10[,-c(na)]
+foremovable <- grepl("kurtosis|skewness|X|yaw|user_name|new_window|timestamp",colnames(traindsetq10))
+traindsetq10 <-  traindsetq10[,!foremovable]
+traindsetq10shorten <- data.frame()
+traindsetq10shorten <- traindsetq10
+colnames(traindsetq10shorten)
+
+```
+### Partition dataset to create a data set and validation set
+```{r, warning = FALSE}
+ptrain = createDataPartition(y = traindsetq10shorten$classe, p = 0.7, 
+                             list = FALSE)
+usefortrain = traindsetq10shorten[ptrain,]
+useforvalid = traindsetq10shorten[-ptrain,]
+```
+
+### Correlation Matrix 
+1. To explore the association between the predictors
+2. To explore the possiblities of uncorrelated data
+3. To confirm the use of principal component analysis
+```{r}
+corMatts <- cor(usefortrain[, -50])
+corrplot(corMatts,order = "FPC", method = "color" , type = "lower", tl.cex = 0.8, tl.col = rgb(0,0,0))
+```
+
+###  Scree Plots - Training Dataset Scree Plot
+#### Significant point of inflection at 30 components for both scree plots
+#### Used to determine how many components should be selected for the modeling stage
+```{r, warning = FALSE}
+# Correlation Plot
+
+####### Training D Set Scree Plot
+preProc351 <- preProcess(usefortrain[,-50], method = "pca", pcaComp = 35 )
+trainpc <- predict(preProc351, usefortrain[, -50])
+pca11 <- principal(trainpc, nfactors = 35, rotate = "none") 
+plot(pca11$values, type = "b", ylab = "Eigenvalues" , xlab = "Component"  )
+```
+
+### Validation Dataset Scree Plot
+##### Used to determine how many components should be selected for the modeling stage
+```{r}
+####### Validation Set Scree Plot
+preProc351val <- preProcess(useforvalid[,-50], method = "pca", pcaComp = 35 )
+trainpcv <- predict(preProc351val, useforvalid[, -50])
+pcaval <- principal(trainpcv, nfactors = 35, rotate = "none") 
+plot(pcaval$values, type = "b", ylab = "Eigenvalues" , xlab = "Component"  )
+#############################
+############# TRAINING OF MODEL
+```
+### Predictive Model Train Control 
+##### 4-fold cross validation was employed.
+ 
+```{r, warning = FALSE}
+tcontrol <- trainControl(method = "cv" , number = 4)
+```
+### Constructing the Model Employing Random Forest
+The random forest algorithm is used to build the model. Principal component analysis is used reduce the numbers of predictors by grouping the correlated predictors.
+```{r, warning= FALSE }
+fittingmdl <- train(classe ~ ., method = "rf", 
+                   preProcess = "pca", data = usefortrain, importance = TRUE)
+```
+### Applying Model To The Testing Dataset
+#### Results - The twenty predictions based upon test dataset are not printed. Adhering to Honor Code.
+1. Prediction error rate as meassured by out-of-bag error acceptable
+2. Two variables were tried at each split, mtry = 2
+```{r, warning = FALSE}
+solution <- predict(fittingmdl,testdsetq10)
+#print(solution)
+# Final outcome not printed.
+```
+```{r, warning = FALSE}
+print(fittingmdl)
+print(fittingmdl$finalModel)
+```
+### Confusion Matrix Generated for Train Dataset & Validation Data
+1. Accuracy above 98% for Training dataset
+2. Accuracy above 95% for Validation dataset
+3. For both matrices, the p-values were less than 2.2e-16
+
+### Confusion Matrix 1 -  Obtained error estimates and accuracy
+##### Training Dataset
+```{r, warning = FALSE}
+################TrainingDset Confusion ##Matrix#######################################################
+ trainmatrix = predict(fittingmdl,traindsetq10shorten)
+ matrix = confusionMatrix(traindsetq10shorten$classe,trainmatrix)
+ print(matrix)
+```
+### Confusion Matrix 2 -   Obtained error estimates and accuracy
+##### Validation Dataset
+```{r, warning = FALSE}
+################Validation Dset Confusion ###Matrix#######################################################
+ validrandomf <- predict(fittingmdl,useforvalid[,-50])
+ mattrixconva <- confusionMatrix(useforvalid$classe ,validrandomf )
+ print(mattrixconva)
+```
+### Principal Component of UnCorrelated Data 
+#####  Y-axis sorts components in decreasing order of importance
+#####  Listed first, at the max location of the y-axis, is the most important component
+```{r, warning = FALSE}
+varImpPlot(fittingmdl$finalModel, sort = TRUE, type = 1, pch = 19, col = 1, cex = 1,
+           main = "Principal Components Graph")
+# Sys.time()
+```
+## References.
+1. Mastering Machine Learning with R (2nd. Edition), C. Lesmeister. Packt(2017) 
+2. Data Mining For Business Intelligence, G. Shmueli, N.R. Patel, P.C. Bruce. John Wiley & Sons (2010)
+3. Discovering Statistics Using R, A. Field, J. Miles, Z. Field.  SAGE (2012)
